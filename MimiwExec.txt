@@ -1,0 +1,259 @@
+-- Mimiw Exec: editor + penjalan skrip dengan daftar tersimpan dan konsol. GUI terpisah.
+-- Belum diuji di game asli. Butuh executor yang punya loadstring (writefile/readfile untuk simpan).
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local LogService = game:GetService("LogService")
+local LP = Players.LocalPlayer
+
+if getgenv then
+    local g = getgenv()
+    if g.__MimiwExec then pcall(g.__MimiwExec) end
+end
+
+local PINK, BG, MAIN, DARK = Color3.fromRGB(255, 105, 180), Color3.fromRGB(22, 10, 18), Color3.fromRGB(36, 17, 29), Color3.fromRGB(14, 7, 12)
+local FOLDER = "MimiwExec"
+local conns = {}
+
+local function placeGui(g)
+    local ok = pcall(function() g.Parent = game:GetService("CoreGui") end)
+    if ok and g.Parent then return end
+    g.Parent = LP:WaitForChild("PlayerGui")
+end
+local function corner(o, r) local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, r or 8) c.Parent = o return c end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "MimiwExec" gui.ResetOnSpawn = false gui.DisplayOrder = 50
+placeGui(gui)
+
+local win = Instance.new("Frame")
+win.Size = UDim2.fromOffset(500, 330)
+win.Position = UDim2.new(0.5, -250, 0.5, -165)
+win.BackgroundColor3 = BG win.BorderSizePixel = 0 win.Parent = gui
+corner(win, 12)
+local ws = Instance.new("UIStroke") ws.Color = PINK ws.Thickness = 1.5 ws.Parent = win
+
+local bar = Instance.new("Frame")
+bar.Size = UDim2.new(1, 0, 0, 34) bar.BackgroundColor3 = MAIN bar.BorderSizePixel = 0 bar.Parent = win
+corner(bar, 12)
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -90, 1, 0) title.Position = UDim2.fromOffset(12, 0)
+title.BackgroundTransparency = 1 title.Text = "Mimiw Exec" title.TextColor3 = PINK
+title.Font = Enum.Font.GothamBold title.TextSize = 15 title.TextXAlignment = Enum.TextXAlignment.Left title.Parent = bar
+
+local function mkBtn(parent, text, x, y, w, h, color, cb)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.fromOffset(w, h) b.Position = UDim2.fromOffset(x, y)
+    b.BackgroundColor3 = color or Color3.fromRGB(60, 30, 48) b.TextColor3 = Color3.new(1, 1, 1)
+    b.Font = Enum.Font.GothamBold b.TextSize = 12 b.Text = text b.AutoButtonColor = true b.Parent = parent
+    corner(b, 7)
+    if cb then b.MouseButton1Click:Connect(cb) end
+    return b
+end
+
+local minB = mkBtn(bar, "–", 0, 4, 28, 26, nil)
+minB.Position = UDim2.new(1, -66, 0, 4)
+local clsB = mkBtn(bar, "✕", 0, 4, 28, 26, Color3.fromRGB(150, 40, 70))
+clsB.Position = UDim2.new(1, -34, 0, 4)
+
+-- geser
+do
+    local drag, st, og
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            drag = true st = i.Position og = win.Position
+        end
+    end)
+    conns[#conns + 1] = UIS.InputChanged:Connect(function(i)
+        if drag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local d = i.Position - st
+            win.Position = UDim2.new(og.X.Scale, og.X.Offset + d.X, og.Y.Scale, og.Y.Offset + d.Y)
+        end
+    end)
+    conns[#conns + 1] = UIS.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then drag = false end
+    end)
+end
+
+-- tab
+local pages, tabBtns = {}, {}
+local body = Instance.new("Frame")
+body.Size = UDim2.new(1, -16, 1, -84) body.Position = UDim2.fromOffset(8, 76)
+body.BackgroundTransparency = 1 body.Parent = win
+local function showPage(n)
+    for k, p in pairs(pages) do p.Visible = (k == n) end
+    for k, b in pairs(tabBtns) do b.BackgroundColor3 = (k == n) and PINK or Color3.fromRGB(60, 30, 48) end
+end
+for i, n in ipairs({ "Editor", "Skrip", "Konsol" }) do
+    tabBtns[n] = mkBtn(win, n, 8 + (i - 1) * 84, 40, 80, 28, nil, function() showPage(n) end)
+    local p = Instance.new("Frame")
+    p.Size = UDim2.fromScale(1, 1) p.BackgroundTransparency = 1 p.Visible = false p.Parent = body
+    pages[n] = p
+end
+
+-- konsol
+local logSF = Instance.new("ScrollingFrame")
+logSF.Size = UDim2.new(1, 0, 1, -34) logSF.BackgroundColor3 = DARK logSF.BorderSizePixel = 0
+logSF.ScrollBarThickness = 4 logSF.CanvasSize = UDim2.new() logSF.AutomaticCanvasSize = Enum.AutomaticSize.Y
+logSF.Parent = pages.Konsol
+corner(logSF, 8)
+local logLay = Instance.new("UIListLayout") logLay.Padding = UDim.new(0, 2) logLay.Parent = logSF
+local logN = 0
+local function log(text, color)
+    logN = logN + 1
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, -8, 0, 0) l.AutomaticSize = Enum.AutomaticSize.Y l.BackgroundTransparency = 1
+    l.TextColor3 = color or Color3.fromRGB(235, 220, 230) l.Font = Enum.Font.Code l.TextSize = 12
+    l.TextXAlignment = Enum.TextXAlignment.Left l.TextWrapped = true l.Text = tostring(text) l.LayoutOrder = logN l.Parent = logSF
+    if logN > 200 then
+        for _, c in ipairs(logSF:GetChildren()) do
+            if c:IsA("TextLabel") then c:Destroy() break end
+        end
+    end
+    logSF.CanvasPosition = Vector2.new(0, 1e6)
+end
+mkBtn(pages.Konsol, "Bersihkan", 0, 0, 90, 28, nil, function()
+    for _, c in ipairs(logSF:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+end).Position = UDim2.new(0, 0, 1, -28)
+conns[#conns + 1] = LogService.MessageOut:Connect(function(msg, kind)
+    local col = kind == Enum.MessageType.MessageError and Color3.fromRGB(255, 110, 110)
+        or kind == Enum.MessageType.MessageWarning and Color3.fromRGB(255, 210, 110) or nil
+    log(msg, col)
+end)
+
+-- editor
+local box = Instance.new("TextBox")
+box.Size = UDim2.new(1, 0, 1, -66) box.BackgroundColor3 = DARK box.BorderSizePixel = 0
+box.TextColor3 = Color3.fromRGB(240, 230, 238) box.PlaceholderColor3 = Color3.fromRGB(150, 120, 140)
+box.PlaceholderText = 'Tempel skrip atau loadstring di sini, contoh:\nloadstring(game:HttpGet("https://..."))()'
+box.Font = Enum.Font.Code box.TextSize = 13 box.TextXAlignment = Enum.TextXAlignment.Left box.TextYAlignment = Enum.TextYAlignment.Top
+box.MultiLine = true box.ClearTextOnFocus = false box.TextWrapped = false box.Text = "" box.Parent = pages.Editor
+corner(box, 8)
+local pad = Instance.new("UIPadding") pad.PaddingLeft = UDim.new(0, 8) pad.PaddingTop = UDim.new(0, 6) pad.Parent = box
+
+local function run(src)
+    src = tostring(src or "")
+    if src:gsub("%s", "") == "" then log("Kotak kosong.", Color3.fromRGB(255, 210, 110)) return end
+    if not loadstring then log("Executor ini tidak punya loadstring.", Color3.fromRGB(255, 110, 110)) return end
+    local f, err = loadstring(src)
+    if not f then log("Syntax error: " .. tostring(err), Color3.fromRGB(255, 110, 110)) showPage("Konsol") return end
+    log("> menjalankan skrip...", PINK)
+    task.spawn(function()
+        local ok, e = pcall(f)
+        if not ok then log("Error: " .. tostring(e), Color3.fromRGB(255, 110, 110)) else log("> selesai", Color3.fromRGB(140, 220, 160)) end
+    end)
+end
+
+local nameBox = Instance.new("TextBox")
+nameBox.Size = UDim2.fromOffset(110, 28) nameBox.Position = UDim2.new(0, 0, 1, -62)
+nameBox.BackgroundColor3 = DARK nameBox.BorderSizePixel = 0 nameBox.TextColor3 = Color3.new(1, 1, 1)
+nameBox.PlaceholderText = "nama skrip" nameBox.PlaceholderColor3 = Color3.fromRGB(150, 120, 140)
+nameBox.Font = Enum.Font.Gotham nameBox.TextSize = 12 nameBox.Text = "" nameBox.ClearTextOnFocus = false nameBox.Parent = pages.Editor
+corner(nameBox, 7)
+local urlBox = Instance.new("TextBox")
+urlBox.Size = UDim2.new(1, -230, 0, 28) urlBox.Position = UDim2.new(0, 116, 1, -62)
+urlBox.BackgroundColor3 = DARK urlBox.BorderSizePixel = 0 urlBox.TextColor3 = Color3.new(1, 1, 1)
+urlBox.PlaceholderText = "alamat skrip (https://...)" urlBox.PlaceholderColor3 = Color3.fromRGB(150, 120, 140)
+urlBox.Font = Enum.Font.Gotham urlBox.TextSize = 12 urlBox.Text = "" urlBox.ClearTextOnFocus = false urlBox.Parent = pages.Editor
+corner(urlBox, 7)
+
+local function put(x, y, w, h, text, color, cb)
+    local b = mkBtn(pages.Editor, text, 0, 0, w, h, color, cb)
+    b.Position = UDim2.new(x, 0, 1, y)
+    return b
+end
+local row2 = -28
+local bRun = mkBtn(pages.Editor, "Eksekusi", 0, 0, 90, 28, PINK, function() run(box.Text) end)
+bRun.Position = UDim2.new(0, 0, 1, row2)
+mkBtn(pages.Editor, "Hapus", 0, 0, 60, 28, nil, function() box.Text = "" end).Position = UDim2.new(0, 96, 1, row2)
+mkBtn(pages.Editor, "Salin", 0, 0, 60, 28, nil, function()
+    if setclipboard then setclipboard(box.Text) log("Disalin ke clipboard.") else log("Executor tidak punya setclipboard.", Color3.fromRGB(255, 210, 110)) end
+end).Position = UDim2.new(0, 162, 1, row2)
+local bUrl = mkBtn(pages.Editor, "Muat URL", 0, 0, 90, 28, nil, function()
+    local u = urlBox.Text
+    if u == "" then log("Isi alamat dulu.", Color3.fromRGB(255, 210, 110)) return end
+    local ok, res = pcall(function() return game:HttpGet(u) end)
+    if ok then box.Text = res log("Skrip dimuat dari URL (" .. #res .. " karakter).") else log("Gagal memuat URL: " .. tostring(res), Color3.fromRGB(255, 110, 110)) end
+end)
+bUrl.Position = UDim2.new(1, -90, 1, -62)
+
+-- simpan & daftar
+local listSF
+local function ensureFolder()
+    if makefolder and isfolder and not isfolder(FOLDER) then pcall(makefolder, FOLDER) end
+end
+local refresh
+local bSave = mkBtn(pages.Editor, "Simpan", 0, 0, 70, 28, nil, function()
+    if not writefile then log("Executor tidak punya writefile.", Color3.fromRGB(255, 210, 110)) return end
+    local n = nameBox.Text:gsub("[^%w_%-%s]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if n == "" then log("Isi nama skrip dulu.", Color3.fromRGB(255, 210, 110)) return end
+    ensureFolder()
+    local ok, e = pcall(writefile, FOLDER .. "/" .. n .. ".lua", box.Text)
+    if ok then log("Tersimpan: " .. n) refresh() else log("Gagal menyimpan: " .. tostring(e), Color3.fromRGB(255, 110, 110)) end
+end)
+bSave.Position = UDim2.new(0, 228, 1, row2)
+
+listSF = Instance.new("ScrollingFrame")
+listSF.Size = UDim2.new(1, 0, 1, -34) listSF.BackgroundColor3 = DARK listSF.BorderSizePixel = 0
+listSF.ScrollBarThickness = 4 listSF.CanvasSize = UDim2.new() listSF.AutomaticCanvasSize = Enum.AutomaticSize.Y
+listSF.Parent = pages.Skrip
+corner(listSF, 8)
+local lLay = Instance.new("UIListLayout") lLay.Padding = UDim.new(0, 4) lLay.Parent = listSF
+local lPad = Instance.new("UIPadding") lPad.PaddingTop = UDim.new(0, 4) lPad.PaddingLeft = UDim.new(0, 4) lPad.PaddingRight = UDim.new(0, 4) lPad.Parent = listSF
+refresh = function()
+    for _, c in ipairs(listSF:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+    if not (listfiles and isfolder) then log("Daftar skrip butuh listfiles.", Color3.fromRGB(255, 210, 110)) return end
+    ensureFolder()
+    local ok, files = pcall(listfiles, FOLDER)
+    if not ok then return end
+    for _, path in ipairs(files) do
+        local name = tostring(path):match("([^/\\]+)$")
+        if name and (name:sub(-4) == ".lua" or name:sub(-4) == ".txt") then
+            local r = Instance.new("Frame")
+            r.Size = UDim2.new(1, -8, 0, 30) r.BackgroundTransparency = 1 r.Parent = listSF
+            mkBtn(r, name, 0, 0, 0, 30, nil, function()
+                local okr, src = pcall(readfile, path)
+                if okr then box.Text = src nameBox.Text = name:gsub("%.%w+$", "") showPage("Editor") end
+            end).Size = UDim2.new(1, -140, 1, 0)
+            local rb = mkBtn(r, "Jalan", 0, 0, 56, 30, PINK, function()
+                local okr, src = pcall(readfile, path)
+                if okr then run(src) end
+            end)
+            rb.Position = UDim2.new(1, -132, 0, 0)
+            local db = mkBtn(r, "Hapus", 0, 0, 56, 30, Color3.fromRGB(150, 40, 70), function()
+                if delfile then pcall(delfile, path) refresh() end
+            end)
+            db.Position = UDim2.new(1, -70, 0, 0)
+        end
+    end
+end
+local rfB = mkBtn(pages.Skrip, "Segarkan", 0, 0, 90, 28, nil, function() refresh() end)
+rfB.Position = UDim2.new(0, 0, 1, -28)
+
+-- buka/tutup
+local minimized = false
+minB.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    win.Size = minimized and UDim2.fromOffset(500, 34) or UDim2.fromOffset(500, 330)
+    body.Visible = not minimized
+    for _, b in pairs(tabBtns) do b.Visible = not minimized end
+end)
+clsB.MouseButton1Click:Connect(function() win.Visible = false end)
+local fab = Instance.new("TextButton")
+fab.Size = UDim2.fromOffset(42, 42) fab.Position = UDim2.new(0, 10, 0.5, -21)
+fab.BackgroundColor3 = PINK fab.Text = "▶" fab.TextSize = 18 fab.TextColor3 = Color3.new(1, 1, 1) fab.Font = Enum.Font.GothamBold fab.Parent = gui
+corner(fab, 21)
+fab.MouseButton1Click:Connect(function() win.Visible = not win.Visible end)
+conns[#conns + 1] = UIS.InputBegan:Connect(function(i, gp)
+    if not gp and i.KeyCode == Enum.KeyCode.RightShift then win.Visible = not win.Visible end
+end)
+
+showPage("Editor")
+refresh()
+log("Mimiw Exec siap. Tulis skrip di Editor lalu tekan Eksekusi.", PINK)
+
+if getgenv then
+    getgenv().__MimiwExec = function()
+        for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+        pcall(function() gui:Destroy() end)
+    end
+end
